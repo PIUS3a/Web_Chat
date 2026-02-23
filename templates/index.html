@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neural Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; align-items: center; justify-content: center; background: #0f172a; color: white; }
+        .box { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(12px); padding: 40px; border-radius: 20px; width: 350px; text-align: center; border: 1px solid rgba(255,255,255,0.1); }
+        .input-group { position: relative; width: 100%; margin: 10px 0; }
+        input { width: 100%; padding: 12px; border-radius: 10px; border: none; box-sizing: border-box; background: #1e293b; color: white; outline: none; padding-right: 40px; }
+        .eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #64748b; font-size: 18px; user-select: none; }
+        button { width: 100%; padding: 12px; background: #6366f1; color: white; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 10px; transition: 0.3s; }
+        button:hover { background: #4f46e5; }
+        .link { font-size: 12px; color: #94a3b8; cursor: pointer; margin: 10px 5px; display: inline-block; text-decoration: underline; }
+        .hidden { display: none; }
+        #chat-ui { width: 500px; }
+        #messages { height: 320px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 15px; padding: 15px; text-align: left; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.05); }
+        .msg-item { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div id="auth-ui" class="box">
+        <h2 id="title">Neural Login</h2>
+        <input id="user" placeholder="Username">
+        <input id="email" class="hidden" placeholder="Email Address">
+        <div class="input-group">
+            <input id="pass" type="password" placeholder="Password (Min 7 chars)">
+            <span class="eye" onclick="togglePass()">👁️</span>
+        </div>
+        <div id="otp-area" class="hidden"><input id="otp" placeholder="Enter Code"></div>
+        <button id="btn" onclick="handle()">Sign In</button>
+        <div>
+            <span class="link" onclick="setMode('login')">Login</span>
+            <span class="link" onclick="setMode('register')">Join</span>
+            <span class="link" onclick="setMode('reset')">Recover</span>
+        </div>
+        <p id="feedback" style="font-size: 12px; color: #fb7185; margin-top: 10px;"></p>
+    </div>
+
+    <div id="chat-ui" class="box hidden">
+        <div id="messages"></div>
+        <div style="display: flex; gap: 8px;">
+            <input id="msg" placeholder="Type @bot..." style="margin:0;">
+            <button onclick="sendMsg()" style="width: 80px; margin:0; background: #10b981;">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let mode = 'login', step = 1, myUser = "";
+        function togglePass() { const p = document.getElementById('pass'); p.type = p.type === 'password' ? 'text' : 'password'; }
+        function setMode(m) {
+            mode = m; step = 1;
+            document.getElementById('title').innerText = m === 'login' ? 'Neural Login' : (m === 'register' ? 'Join Network' : 'Reset Access');
+            document.getElementById('email').classList.toggle('hidden', m === 'login');
+            document.getElementById('user').classList.toggle('hidden', m === 'reset');
+            document.getElementById('otp-area').classList.add('hidden');
+            document.getElementById('btn').innerText = m === 'login' ? 'Sign In' : 'Send OTP';
+            document.getElementById('feedback').innerText = "";
+        }
+        function handle() {
+            const u = document.getElementById('user').value, p = document.getElementById('pass').value, e = document.getElementById('email').value, o = document.getElementById('otp').value;
+            if (mode === 'login') socket.emit('login_user', { user: u, pass: p });
+            else if (mode === 'register') {
+                if (step === 1) socket.emit('register_step_1', { user: u, pass: p, email: e });
+                else socket.emit('verify_otp', { user: u, otp: o });
+            } else if (mode === 'reset') {
+                if (step === 1) socket.emit('request_reset', { email: e });
+                else socket.emit('confirm_reset', { email: e, otp: o, pass: p });
+            }
+        }
+        socket.on('auth_status', (data) => {
+            document.getElementById('feedback').innerText = data.msg;
+            if (data.success) {
+                if (data.is_login) { myUser = data.user; document.getElementById('auth-ui').classList.add('hidden'); document.getElementById('chat-ui').classList.remove('hidden'); }
+                else if (data.needs_otp) { step = 2; document.getElementById('otp-area').classList.remove('hidden'); document.getElementById('btn').innerText = "Verify OTP"; }
+                else { alert(data.msg); setMode('login'); }
+            }
+        });
+        function sendMsg() { const m = document.getElementById('msg').value; if(m) { socket.emit('chat_msg', { user: myUser, text: m }); document.getElementById('msg').value = ""; } }
+        socket.on('receive_msg', (data) => {
+            const box = document.getElementById('messages');
+            box.innerHTML += `<div class="msg-item"><b>${data.user}:</b> ${data.text} <small style="float:right; color:#94a3b8">${data.time}</small></div>`;
+            box.scrollTop = box.scrollHeight;
+        });
+    </script>
+</body>
+</html>
